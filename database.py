@@ -549,10 +549,19 @@ def get_db_stats():
         try:
             cursor.execute("SELECT pg_database_size(current_database())")
             row = cursor.fetchone()
-            if row:
+            if row and row[0]:
                 db_size_bytes = row[0]
         except Exception:
-            db_size_bytes = 1024 * 1024
+            try:
+                cursor.execute("""
+                    SELECT SUM(pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(tablename)))
+                    FROM pg_tables WHERE schemaname = 'public'
+                """)
+                row = cursor.fetchone()
+                if row and row[0]:
+                    db_size_bytes = row[0]
+            except Exception:
+                db_size_bytes = 1.5 * 1024 * 1024
     else:
         if os.path.exists("keys.db"):
             db_size_bytes = os.path.getsize("keys.db")

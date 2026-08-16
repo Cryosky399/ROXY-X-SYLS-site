@@ -19,7 +19,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Config
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "SkyWorld")
 SITE_URL = os.getenv("RENDER_EXTERNAL_URL", "https://roxy-x-syls-site.onrender.com")
 
 # 24/7 Self Keep-Alive Loop (Every 10 minutes)
@@ -445,16 +444,16 @@ async def admin_dashboard():
         <!-- Top Navigation Bar -->
         <div class="top-navbar">
             <div class="logo-group">
-                <div class="logo-title">ROXY X SKYLS</div>
+                <div class="logo-title" id="txtSiteTitle">ROXY X SKYLS</div>
             </div>
             <div class="nav-actions">
-                <select id="langSelect" class="form-control" style="width: auto; padding: 6px 10px; background: var(--surface); color: var(--cyan); border-color: var(--cyan);" onchange="changeLang(this.value)">
+                <select id="langSelect" class="form-control" style="width: auto; padding: 6px 10px; background: var(--surface); color: var(--cyan); border-color: var(--cyan);" onchange="changeLanguage(this.value)">
                     <option value="en">🇬🇧 EN</option>
                     <option value="uz">🇺🇿 UZ</option>
                     <option value="ru">🇷🇺 RU</option>
                 </select>
-                <button class="btn btn-success" onclick="openChangePassModal()">🔑 CHANGE PASS</button>
-                <button class="btn btn-danger" onclick="logout()">LOGOUT</button>
+                <button class="btn btn-success" id="btnChangePassNav" onclick="openChangePassModal()">🔑 CHANGE PASS</button>
+                <button class="btn btn-danger" id="btnLogoutNav" onclick="logout()">LOGOUT</button>
             </div>
         </div>
 
@@ -463,7 +462,7 @@ async def admin_dashboard():
             <div class="modal-box">
                 <h3 class="card-title" style="margin-bottom: 16px;">ADMIN LOGIN</h3>
                 <div class="form-group">
-                    <label>Password</label>
+                    <label id="lblLoginPass">Password</label>
                     <input type="password" id="loginPassword" class="form-control" placeholder="Enter password">
                 </div>
                 <button class="btn btn-success" style="width: 100%; margin-top: 10px;" onclick="performLogin()">LOGIN TO SYSTEM</button>
@@ -476,49 +475,49 @@ async def admin_dashboard():
             <!-- Live Database & Ping Stats Bar -->
             <div class="stats-grid">
                 <div class="stat-card">
-                    <span class="stat-label">🗄 DATABASE USAGE</span>
+                    <span class="stat-label" id="lblStatDb">🗄 DATABASE USAGE</span>
                     <span class="stat-val" id="statDbSize">0.0 MB / 500 MB</span>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-label">⚡️ LATENCY PING</span>
+                    <span class="stat-label" id="lblStatPing">⚡️ LATENCY PING</span>
                     <span class="stat-val" style="color: var(--green);" id="statPing">0 ms</span>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-label">🔑 TOTAL KEYS</span>
+                    <span class="stat-label" id="lblStatKeys">🔑 TOTAL KEYS</span>
                     <span class="stat-val" id="statKeys">0 Keys</span>
                 </div>
                 <div class="stat-card">
-                    <span class="stat-label">📱 ACTIVE USERS</span>
+                    <span class="stat-label" id="lblStatUsers">📱 ACTIVE USERS</span>
                     <span class="stat-val" style="color: var(--green);" id="statUsers">0 Online</span>
                 </div>
             </div>
             
             <!-- Navigation Tabs -->
             <div class="tabs">
-                <button class="tab-btn active" onclick="switchTab('keysTab', this)">🔑 KEYS MANAGER</button>
-                <button class="tab-btn" onclick="switchTab('filesTab', this)">📁 FILES MANAGER</button>
-                <button class="tab-btn" onclick="switchTab('usersTab', this)">👥 ACTIVE USERS & BANS</button>
+                <button class="tab-btn active" id="tabKeysBtn" onclick="switchTab('keysTab', this)">🔑 KEYS MANAGER</button>
+                <button class="tab-btn" id="tabFilesBtn" onclick="switchTab('filesTab', this)">📁 FILES MANAGER</button>
+                <button class="tab-btn" id="tabUsersBtn" onclick="switchTab('usersTab', this)">👥 ACTIVE USERS & BANS</button>
             </div>
 
             <!-- KEYS MANAGER TAB -->
             <div id="keysTab" class="tab-content">
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title">LICENSE KEYS CONTROL</span>
-                        <button class="btn btn-success" onclick="openGenerateModal()">+ GENERATE KEY</button>
+                        <span class="card-title" id="txtKeysTitle">LICENSE KEYS CONTROL</span>
+                        <button class="btn btn-success" id="btnOpenGenKey" onclick="openGenerateModal()">+ GENERATE KEY</button>
                     </div>
                     <div class="table-responsive">
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Key String</th>
-                                    <th>Type / File</th>
-                                    <th>Duration</th>
-                                    <th>Max Dev</th>
-                                    <th>Status</th>
-                                    <th>Created</th>
-                                    <th>Expires</th>
-                                    <th>Actions</th>
+                                    <th id="thKey">Key String</th>
+                                    <th id="thType">Type / File</th>
+                                    <th id="thDur">Duration</th>
+                                    <th id="thMax">Max Dev</th>
+                                    <th id="thSt">Status</th>
+                                    <th id="thCr">Created</th>
+                                    <th id="thExp">Expires</th>
+                                    <th id="thAct">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="keysTableBody">
@@ -533,12 +532,12 @@ async def admin_dashboard():
             <div id="filesTab" class="tab-content" style="display: none;">
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title">UPLOAD PATCH FILES (lib.zip)</span>
+                        <span class="card-title" id="txtFilesTitle">UPLOAD PATCH FILES (lib.zip)</span>
                     </div>
                     <div class="form-group">
                         <input type="file" id="fileInput" class="form-control">
                     </div>
-                    <button class="btn btn-success" onclick="uploadFile()">UPLOAD PATCH FILE</button>
+                    <button class="btn btn-success" id="btnUploadFile" onclick="uploadFile()">UPLOAD PATCH FILE</button>
 
                     <div class="table-responsive" style="margin-top: 20px;">
                         <table>
@@ -562,7 +561,7 @@ async def admin_dashboard():
             <div id="usersTab" class="tab-content" style="display: none;">
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title">ACTIVE USERS & BAN SYSTEM</span>
+                        <span class="card-title" id="txtUsersTitle">ACTIVE USERS & BAN SYSTEM</span>
                     </div>
                     <div class="table-responsive">
                         <table>
@@ -573,7 +572,7 @@ async def admin_dashboard():
                                     <th>Device ID</th>
                                     <th>Activated</th>
                                     <th>Status</th>
-                                    <th>Actions</th>
+                                    <th>Actions (Ban / Mute)</th>
                                 </tr>
                             </thead>
                             <tbody id="usersTableBody">
@@ -633,7 +632,7 @@ async def admin_dashboard():
                 <h3 class="card-title" style="margin-bottom: 16px;">CHANGE ADMIN PASSWORD</h3>
                 <div class="form-group">
                     <label>New Password</label>
-                    <input type="text" id="newAdminPasswordInput" class="form-control" placeholder="Жаңа құпия сөзді енгізіңіз">
+                    <input type="text" id="newAdminPasswordInput" class="form-control" placeholder="Enter new password">
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <button class="btn btn-success" style="flex: 1;" onclick="submitChangePassword()">SAVE</button>
@@ -644,6 +643,119 @@ async def admin_dashboard():
 
         <script>
             let adminToken = localStorage.getItem("adminToken") || "";
+            let currentLang = localStorage.getItem("siteLang") || "en";
+
+            const i18n = {
+                en: {
+                    site_title: "ROXY X SKYLS",
+                    btn_change_pass: "🔑 CHANGE PASS",
+                    btn_logout: "LOGOUT",
+                    tab_keys: "🔑 KEYS MANAGER",
+                    tab_files: "📁 FILES MANAGER",
+                    tab_users: "👥 ACTIVE USERS & BANS",
+                    stat_db: "🗄 DATABASE USAGE",
+                    stat_ping: "⚡️ LATENCY PING",
+                    stat_keys: "🔑 TOTAL KEYS",
+                    stat_users: "📱 ACTIVE USERS",
+                    keys_title: "LICENSE KEYS CONTROL",
+                    btn_gen_key: "+ GENERATE KEY",
+                    files_title: "UPLOAD PATCH FILES (lib.zip)",
+                    users_title: "ACTIVE USERS & BAN SYSTEM",
+                    btn_upload: "UPLOAD PATCH FILE",
+                    th_key: "Key String",
+                    th_type: "Type / File",
+                    th_dur: "Duration",
+                    th_max: "Max Dev",
+                    th_st: "Status",
+                    th_cr: "Created",
+                    th_exp: "Expires",
+                    th_act: "Actions"
+                },
+                uz: {
+                    site_title: "ROXY X SKYLS",
+                    btn_change_pass: "🔑 PAROLNI O'ZGARTIRISH",
+                    btn_logout: "CHIQISH",
+                    tab_keys: "🔑 KALITLAR",
+                    tab_files: "📁 FAYLLAR",
+                    tab_users: "👥 FOYDALANUVCHILAR & BAN",
+                    stat_db: "🗄 BAZA HAJMI",
+                    stat_ping: "⚡️ BAZA TEZLIGI (PING)",
+                    stat_keys: "🔑 JAMI KALITLAR",
+                    stat_users: "📱 ONLINE FOYDALANUVCHILAR",
+                    keys_title: "KALITLARNI BOSHQARISH",
+                    btn_gen_key: "+ KALIT YARATISH",
+                    files_title: "FAYL YUKLASH (lib.zip)",
+                    users_title: "FOYDALANUVCHILAR VA BAN TIZIMI",
+                    btn_upload: "FAYLI YUKLASH",
+                    th_key: "Kalit Kodi",
+                    th_type: "Turi / Fayl",
+                    th_dur: "Muddati",
+                    th_max: "Qurilmalar",
+                    th_st: "Holati",
+                    th_cr: "Yaratilgan",
+                    th_exp: "Tugash Vaqti",
+                    th_act: "Amallar"
+                },
+                ru: {
+                    site_title: "ROXY X SKYLS",
+                    btn_change_pass: "🔑 СМЕНИТЬ ПАРОЛЬ",
+                    btn_logout: "ВЫХОД",
+                    tab_keys: "🔑 МЕНЕДЖЕР КЛЮЧЕЙ",
+                    tab_files: "📁 МЕНЕДЖЕР ФАЙЛОВ",
+                    tab_users: "👥 ПОЛЬЗОВАТЕЛИ И БАНЫ",
+                    stat_db: "🗄 РАЗМЕР БАЗЫ ДАННЫХ",
+                    stat_ping: "⚡️ ПИНГ БАЗЫ ДАННЫХ",
+                    stat_keys: "🔑 ВСЕГО КЛЮЧЕЙ",
+                    stat_users: "📱 ОНЛАЙН ПОЛЬЗОВАТЕЛИ",
+                    keys_title: "УПРАВЛЕНИЕ КЛЮЧАМИ",
+                    btn_gen_key: "+ СОЗДАТЬ КЛЮЧ",
+                    files_title: "ЗАГРУЗИТЬ ФАЙЛ (lib.zip)",
+                    users_title: "СИСТЕМА БАНОВ И МУТОВ",
+                    btn_upload: "ЗАГРУЗИТЬ ФАЙЛ",
+                    th_key: "Код Ключа",
+                    th_type: "Тип / Файл",
+                    th_dur: "Срок",
+                    th_max: "Устройства",
+                    th_st: "Статус",
+                    th_cr: "Создан",
+                    th_exp: "Истекает",
+                    th_act: "Действия"
+                }
+            };
+
+            function changeLanguage(lang) {
+                currentLang = lang;
+                localStorage.setItem("siteLang", lang);
+                document.getElementById("langSelect").value = lang;
+
+                const t = i18n[lang] || i18n.en;
+                document.getElementById("txtSiteTitle").innerText = t.site_title;
+                document.getElementById("btnChangePassNav").innerText = t.btn_change_pass;
+                document.getElementById("btnLogoutNav").innerText = t.btn_logout;
+                document.getElementById("tabKeysBtn").innerText = t.tab_keys;
+                document.getElementById("tabFilesBtn").innerText = t.tab_files;
+                document.getElementById("tabUsersBtn").innerText = t.tab_users;
+                document.getElementById("lblStatDb").innerText = t.stat_db;
+                document.getElementById("lblStatPing").innerText = t.stat_ping;
+                document.getElementById("lblStatKeys").innerText = t.stat_keys;
+                document.getElementById("lblStatUsers").innerText = t.stat_users;
+                document.getElementById("txtKeysTitle").innerText = t.keys_title;
+                document.getElementById("btnOpenGenKey").innerText = t.btn_gen_key;
+                document.getElementById("txtFilesTitle").innerText = t.files_title;
+                document.getElementById("txtUsersTitle").innerText = t.users_title;
+                document.getElementById("btnUploadFile").innerText = t.btn_upload;
+                document.getElementById("thKey").innerText = t.th_key;
+                document.getElementById("thType").innerText = t.th_type;
+                document.getElementById("thDur").innerText = t.th_dur;
+                document.getElementById("thMax").innerText = t.th_max;
+                document.getElementById("thSt").innerText = t.th_st;
+                document.getElementById("thCr").innerText = t.th_cr;
+                document.getElementById("thExp").innerText = t.th_exp;
+                document.getElementById("thAct").innerText = t.th_act;
+            }
+
+            // Init language on load
+            changeLanguage(currentLang);
 
             if (adminToken) {
                 document.getElementById("loginOverlay").style.display = "none";
@@ -656,7 +768,7 @@ async def admin_dashboard():
 
             function submitChangePassword() {
                 const newPass = document.getElementById("newAdminPasswordInput").value.trim();
-                if (!newPass) return alert("Құпия сөзді жазыңыз!");
+                if (!newPass) return alert("Please enter password!");
 
                 fetch("/api/admin/change_password", {
                     method: "POST",
@@ -666,12 +778,12 @@ async def admin_dashboard():
                 .then(r => r.json())
                 .then(data => {
                     if (data.status === "success") {
-                        alert("Құпия сөз сәтті өзгертілді!");
+                        alert("Password updated successfully!");
                         adminToken = newPass;
                         localStorage.setItem("adminToken", newPass);
                         closeChangePassModal();
                     } else {
-                        alert("Қате орын алды");
+                        alert("Error updating password");
                     }
                 });
             }
@@ -790,8 +902,16 @@ async def admin_dashboard():
                     tbody.innerHTML = "";
                     data.forEach(u => {
                         const banBtn = u.is_banned 
-                            ? `<button class="btn btn-success" style="padding:4px 8px; font-size:11px;" onclick="unbanUser('${u.device_id}')">UNBAN</button>`
-                            : `<button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="banUser('${u.device_id}')">BAN</button>`;
+                            ? `<button class="btn btn-success" style="padding:4px 8px; font-size:11px; margin-right:4px;" onclick="unbanUser('${u.device_id}')">UNBAN</button>`
+                            : `<button class="btn btn-danger" style="padding:4px 8px; font-size:11px; margin-right:4px;" onclick="banUser('${u.device_id}')">BAN</button>`;
+
+                        const muteBtn = u.is_muted
+                            ? `<button class="btn btn-success" style="padding:4px 8px; font-size:11px;" onclick="unmuteUser('${u.device_id}')">UNMUTE</button>`
+                            : `<button class="btn" style="padding:4px 8px; font-size:11px;" onclick="muteUser('${u.device_id}')">MUTE</button>`;
+
+                        let userStatus = '<span class="badge badge-active">ACTIVE</span>';
+                        if (u.is_banned) userStatus = '<span class="badge badge-expired">BANNED</span>';
+                        else if (u.is_muted) userStatus = '<span class="badge badge-disabled">MUTED</span>';
 
                         tbody.innerHTML += `
                             <tr>
@@ -799,8 +919,8 @@ async def admin_dashboard():
                                 <td>${u.key}</td>
                                 <td><code>${u.device_id}</code></td>
                                 <td>${u.activated_at.split('T')[0]}</td>
-                                <td>${u.is_banned ? '<span class="badge badge-expired">BANNED</span>' : '<span class="badge badge-active">OK</span>'}</td>
-                                <td>${banBtn}</td>
+                                <td>${userStatus}</td>
+                                <td>${banBtn} ${muteBtn}</td>
                             </tr>
                         `;
                     });
@@ -908,6 +1028,22 @@ async def admin_dashboard():
 
             function unbanUser(devId) {
                 fetch("/api/admin/unban_user", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` },
+                    body: JSON.stringify({ device_id: devId })
+                }).then(() => loadUsers());
+            }
+
+            function muteUser(devId) {
+                fetch("/api/admin/mute_user", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` },
+                    body: JSON.stringify({ device_id: devId })
+                }).then(() => loadUsers());
+            }
+
+            function unmuteUser(devId) {
+                fetch("/api/admin/unmute_user", {
                     method: "POST",
                     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` },
                     body: JSON.stringify({ device_id: devId })
