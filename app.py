@@ -42,11 +42,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# Helper function to generate keys: SkyBots + 6 uppercase chars/digits
-def generate_key_string(prefix="SkyBots") -> str:
-    chars = string.ascii_uppercase + string.digits
-    random_part = "".join(random.choices(chars, k=6))
-    return f"{prefix}{random_part}"
+# Helper function to generate keys: ROXY-X-SKYLS- + 6 random chars (2 numbers, 4 random upper/lower letters)
+def generate_key_string(prefix="ROXY-X-SKYLS") -> str:
+    digits = random.choices(string.digits, k=2)
+    letters = random.choices(string.ascii_letters, k=4)
+    combined = digits + letters
+    random.shuffle(combined)
+    suffix = "".join(combined)
+    return f"{prefix}-{suffix}"
 
 # Admin auth dependency
 def verify_admin(authorization: str = Header(None), token: str = None):
@@ -213,7 +216,7 @@ async def admin_generate_key(req: GenerateKeyRequest, authenticated: bool = Depe
     if req.custom_key:
         key_str = req.custom_key.strip()
     else:
-        prefix = "ADMIN" if req.key_type == "ADMIN" else ("VIP" if req.key_type == "VIP" else "ROXY")
+        prefix = f"ROXY-X-SKYLS-{req.key_type}" if req.key_type in ["ADMIN", "VIP"] else "ROXY-X-SKYLS"
         key_str = generate_key_string(prefix)
         
     database.create_key(key_str, req.file_id, req.duration_days, req.max_devices)
