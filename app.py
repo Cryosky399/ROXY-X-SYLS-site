@@ -726,36 +726,43 @@ async def admin_dashboard():
             function changeLanguage(lang) {
                 currentLang = lang;
                 localStorage.setItem("siteLang", lang);
-                document.getElementById("langSelect").value = lang;
+                const sel = document.getElementById("langSelect");
+                if (sel) sel.value = lang;
 
                 const t = i18n[lang] || i18n.en;
-                document.getElementById("txtSiteTitle").innerText = t.site_title;
-                document.getElementById("btnChangePassNav").innerText = t.btn_change_pass;
-                document.getElementById("btnLogoutNav").innerText = t.btn_logout;
-                document.getElementById("tabKeysBtn").innerText = t.tab_keys;
-                document.getElementById("tabFilesBtn").innerText = t.tab_files;
-                document.getElementById("tabUsersBtn").innerText = t.tab_users;
-                document.getElementById("lblStatDb").innerText = t.stat_db;
-                document.getElementById("lblStatPing").innerText = t.stat_ping;
-                document.getElementById("lblStatKeys").innerText = t.stat_keys;
-                document.getElementById("lblStatUsers").innerText = t.stat_users;
-                document.getElementById("txtKeysTitle").innerText = t.keys_title;
-                document.getElementById("btnOpenGenKey").innerText = t.btn_gen_key;
-                document.getElementById("txtFilesTitle").innerText = t.files_title;
-                document.getElementById("txtUsersTitle").innerText = t.users_title;
-                document.getElementById("btnUploadFile").innerText = t.btn_upload;
-                document.getElementById("thKey").innerText = t.th_key;
-                document.getElementById("thType").innerText = t.th_type;
-                document.getElementById("thDur").innerText = t.th_dur;
-                document.getElementById("thMax").innerText = t.th_max;
-                document.getElementById("thSt").innerText = t.th_st;
-                document.getElementById("thCr").innerText = t.th_cr;
-                document.getElementById("thExp").innerText = t.th_exp;
-                document.getElementById("thAct").innerText = t.th_act;
+                const setTxt = (id, val) => {
+                    const el = document.getElementById(id);
+                    if (el) el.innerText = val;
+                };
+
+                setTxt("txtSiteTitle", t.site_title);
+                setTxt("btnChangePassNav", t.btn_change_pass);
+                setTxt("btnLogoutNav", t.btn_logout);
+                setTxt("tabKeysBtn", t.tab_keys);
+                setTxt("tabFilesBtn", t.tab_files);
+                setTxt("tabUsersBtn", t.tab_users);
+                setTxt("lblStatDb", t.stat_db);
+                setTxt("lblStatPing", t.stat_ping);
+                setTxt("lblStatKeys", t.stat_keys);
+                setTxt("lblStatUsers", t.stat_users);
+                setTxt("txtKeysTitle", t.keys_title);
+                setTxt("btnOpenGenKey", t.btn_gen_key);
+                setTxt("txtFilesTitle", t.files_title);
+                setTxt("txtUsersTitle", t.users_title);
+                setTxt("btnUploadFile", t.btn_upload);
+                setTxt("thKey", t.th_key);
+                setTxt("thType", t.th_type);
+                setTxt("thDur", t.th_dur);
+                setTxt("thMax", t.th_max);
+                setTxt("thSt", t.th_st);
+                setTxt("thCr", t.th_cr);
+                setTxt("thExp", t.th_exp);
+                setTxt("thAct", t.th_act);
             }
 
-            // Init language on load
-            changeLanguage(currentLang);
+            document.addEventListener("DOMContentLoaded", function() {
+                changeLanguage(currentLang);
+            });
 
             if (adminToken) {
                 document.getElementById("loginOverlay").style.display = "none";
