@@ -463,8 +463,8 @@ async def admin_dashboard():
             <div class="modal-box">
                 <h3 class="card-title" style="margin-bottom: 16px;">ADMIN LOGIN</h3>
                 <div class="form-group">
-                    <label>Құпия сөзді енгізіңіз (Password)</label>
-                    <input type="password" id="loginPassword" class="form-control" placeholder="Құпия сөзді жазыңыз (ADMINS194G19)">
+                    <label>Password</label>
+                    <input type="password" id="loginPassword" class="form-control" placeholder="Enter password">
                 </div>
                 <button class="btn btn-success" style="width: 100%; margin-top: 10px;" onclick="performLogin()">LOGIN TO SYSTEM</button>
             </div>
