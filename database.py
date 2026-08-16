@@ -222,10 +222,12 @@ def get_file_by_id(file_id: int):
 def delete_file(file_id: int):
     conn = get_connection()
     cursor = conn.cursor()
-    is_postgres = DATABASE_URL is not None
+    is_postgres = _using_postgres
     if is_postgres:
+        cursor.execute("DELETE FROM license_keys WHERE file_id = %s", (file_id,))
         cursor.execute("DELETE FROM patch_files WHERE id = %s", (file_id,))
     else:
+        cursor.execute("DELETE FROM license_keys WHERE file_id = ?", (file_id,))
         cursor.execute("DELETE FROM patch_files WHERE id = ?", (file_id,))
     conn.commit()
     conn.close()

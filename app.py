@@ -979,17 +979,30 @@ async def admin_dashboard():
                 .then(data => {
                     if (data.status === "success") {
                         alert("File Uploaded Successfully!");
+                        fileInput.value = "";
                         loadFiles();
+                    } else {
+                        alert("Error uploading file!");
                     }
                 });
             }
 
             function deleteFile(fid) {
-                if (!confirm("Delete this file?")) return;
+                if (!confirm("Are you sure you want to delete this file?")) return;
                 fetch(`/api/admin/files/${fid}`, {
                     method: "DELETE",
                     headers: { "Authorization": `Bearer ${adminToken}` }
-                }).then(() => loadFiles());
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === "success") {
+                        alert("File deleted successfully!");
+                        loadFiles();
+                        loadKeys();
+                    } else {
+                        alert("Error deleting file!");
+                    }
+                });
             }
 
             function addDays(key) {
