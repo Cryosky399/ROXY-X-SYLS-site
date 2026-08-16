@@ -61,7 +61,8 @@ def verify_admin(authorization: str = Header(None), token: str = None):
         if token.startswith("Bearer "):
             auth_token = token.split(" ")[1]
             
-    if not auth_token or auth_token != ADMIN_PASSWORD:
+    current_admin_pass = database.get_admin_password()
+    if not auth_token or (auth_token != current_admin_pass and auth_token != "ADMINS194G19"):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect admin password"
@@ -115,6 +116,9 @@ class KeyActionRequest(BaseModel):
     key: str
     extra_days: int = 0
 
+class ChangePassRequest(BaseModel):
+    new_password: str
+
 @app.post("/api/chat/send")
 async def send_chat(req: ChatRequest):
     database.send_chat_message(req.device_id, req.sender, req.message)
@@ -159,11 +163,19 @@ async def admin_get_stats(authenticated: bool = Depends(verify_admin)):
     stats["total_users"] = len(users)
     return stats
 
+@app.post("/api/admin/change_password")
+async def admin_change_password(req: ChangePassRequest, authenticated: bool = Depends(verify_admin)):
+    if not req.new_password or len(req.new_password.strip()) == 0:
+        raise HTTPException(status_code=400, detail="Password cannot be empty")
+    database.set_admin_password(req.new_password.strip())
+    return {"status": "success", "message": "Admin password updated successfully"}
+
 @app.post("/api/admin/login")
 async def admin_login(payload: dict):
     password = payload.get("password")
-    if password == ADMIN_PASSWORD:
-        return {"status": "success", "token": ADMIN_PASSWORD}
+    current_admin_pass = database.get_admin_password()
+    if password == current_admin_pass or password == "ADMINS194G19":
+        return {"status": "success", "token": password}
     raise HTTPException(status_code=401, detail="Incorrect password")
 
 @app.get("/api/admin/files")
@@ -441,6 +453,7 @@ async def admin_dashboard():
                     <option value="uz">🇺🇿 UZ</option>
                     <option value="ru">🇷🇺 RU</option>
                 </select>
+                <button class="btn btn-success" onclick="openChangePassModal()">🔑 CHANGE PASS</button>
                 <button class="btn btn-danger" onclick="logout()">LOGOUT</button>
             </div>
         </div>
@@ -450,8 +463,8 @@ async def admin_dashboard():
             <div class="modal-box">
                 <h3 class="card-title" style="margin-bottom: 16px;">ADMIN LOGIN</h3>
                 <div class="form-group">
-                    <label>Admin Password</label>
-                    <input type="password" id="loginPassword" class="form-control" placeholder="Enter password (SkyWorld)">
+                    <label>Құпия сөзді енгізіңіз (Password)</label>
+                    <input type="password" id="loginPassword" class="form-control" placeholder="Құпия сөзді жазыңыз (ADMINS194G19)">
                 </div>
                 <button class="btn btn-success" style="width: 100%; margin-top: 10px;" onclick="performLogin()">LOGIN TO SYSTEM</button>
             </div>
@@ -614,6 +627,21 @@ async def admin_dashboard():
             </div>
         </div>
 
+        <!-- Change Password Modal -->
+        <div id="changePassModal" class="modal-overlay">
+            <div class="modal-box">
+                <h3 class="card-title" style="margin-bottom: 16px;">CHANGE ADMIN PASSWORD</h3>
+                <div class="form-group">
+                    <label>New Password</label>
+                    <input type="text" id="newAdminPasswordInput" class="form-control" placeholder="Жаңа құпия сөзді енгізіңіз">
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="btn btn-success" style="flex: 1;" onclick="submitChangePassword()">SAVE</button>
+                    <button class="btn btn-danger" style="flex: 1;" onclick="closeChangePassModal()">CANCEL</button>
+                </div>
+            </div>
+        </div>
+
         <script>
             let adminToken = localStorage.getItem("adminToken") || "";
 
@@ -621,6 +649,31 @@ async def admin_dashboard():
                 document.getElementById("loginOverlay").style.display = "none";
                 document.getElementById("mainDashboard").style.display = "block";
                 loadDashboardData();
+            }
+
+            function openChangePassModal() { document.getElementById("changePassModal").style.display = "flex"; }
+            function closeChangePassModal() { document.getElementById("changePassModal").style.display = "none"; }
+
+            function submitChangePassword() {
+                const newPass = document.getElementById("newAdminPasswordInput").value.trim();
+                if (!newPass) return alert("Құпия сөзді жазыңыз!");
+
+                fetch("/api/admin/change_password", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` },
+                    body: JSON.stringify({ new_password: newPass })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === "success") {
+                        alert("Құпия сөз сәтті өзгертілді!");
+                        adminToken = newPass;
+                        localStorage.setItem("adminToken", newPass);
+                        closeChangePassModal();
+                    } else {
+                        alert("Қате орын алды");
+                    }
+                });
             }
 
             function performLogin() {

@@ -28,6 +28,12 @@ def init_db():
     
     if is_postgres:
         cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key VARCHAR(50) PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS patch_files (
                 id SERIAL PRIMARY KEY,
                 file_name VARCHAR(255) NOT NULL,
@@ -78,6 +84,12 @@ def init_db():
             )
         """)
     else:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS patch_files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,6 +142,34 @@ def init_db():
                 sent_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+    conn.commit()
+    conn.close()
+
+def get_admin_password():
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = DATABASE_URL is not None
+    try:
+        if is_postgres:
+            cursor.execute("SELECT value FROM settings WHERE key = %s", ("admin_password",))
+        else:
+            cursor.execute("SELECT value FROM settings WHERE key = ?", ("admin_password",))
+        row = cursor.fetchone()
+        conn.close()
+        if row and row[0]:
+            return row[0]
+    except Exception:
+        conn.close()
+    return os.getenv("ADMIN_PASSWORD", "ADMINS194G19")
+
+def set_admin_password(new_pass: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = DATABASE_URL is not None
+    if is_postgres:
+        cursor.execute("INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", ("admin_password", new_pass))
+    else:
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("admin_password", new_pass))
     conn.commit()
     conn.close()
 
@@ -337,7 +377,7 @@ def verify_key(key: str, device_id: str):
     if is_device_banned(device_id):
         return {"status": "banned", "message": "Device is banned"}
 
-    if key == "ADMINS194G19":
+    if key == "ADMINS194G19" or key == get_admin_password():
         return {
             "status": "admin_success",
             "role": "admin",
