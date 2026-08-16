@@ -492,3 +492,40 @@ def get_chat_messages(device_id: str):
     rows = cursor.fetchall()
     conn.close()
     return rows
+
+def get_db_stats():
+    import time
+    start_time = time.time()
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = _using_postgres
+    
+    cursor.execute("SELECT 1")
+    cursor.fetchone()
+    ping_ms = round((time.time() - start_time) * 1000, 2)
+    
+    db_size_bytes = 0
+    if is_postgres:
+        try:
+            cursor.execute("SELECT pg_database_size(current_database())")
+            row = cursor.fetchone()
+            if row:
+                db_size_bytes = row[0]
+        except Exception:
+            db_size_bytes = 1024 * 1024
+    else:
+        if os.path.exists("keys.db"):
+            db_size_bytes = os.path.getsize("keys.db")
+
+    conn.close()
+    db_size_mb = round(db_size_bytes / (1024 * 1024), 2)
+    max_mb = 500.0
+    used_percent = round((db_size_mb / max_mb) * 100, 1)
+
+    return {
+        "db_type": "PostgreSQL (Supabase)" if is_postgres else "SQLite",
+        "ping_ms": ping_ms,
+        "size_mb": db_size_mb,
+        "max_mb": max_mb,
+        "used_percent": used_percent
+    }

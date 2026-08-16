@@ -150,6 +150,15 @@ async def admin_unmute_user(req: BanRequest, authenticated: bool = Depends(verif
 
 # --- PROTECTED ADMIN API ---
 
+@app.get("/api/admin/stats")
+async def admin_get_stats(authenticated: bool = Depends(verify_admin)):
+    stats = database.get_db_stats()
+    keys = database.get_all_keys()
+    users = database.get_all_users()
+    stats["total_keys"] = len(keys)
+    stats["total_users"] = len(users)
+    return stats
+
 @app.post("/api/admin/login")
 async def admin_login(payload: dict):
     password = payload.get("password")
@@ -339,8 +348,25 @@ async def admin_dashboard():
             .btn-success { border-color: var(--green); color: var(--green); }
             .btn-success:hover { background: var(--green); color: #000; box-shadow: 0 0 10px var(--green); }
 
-            /* Container & Tabs */
+            /* Container & Stats Header Bar */
             .container { max-width: 1200px; margin: 24px auto; padding: 0 16px; }
+
+            .stats-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: 16px;
+                margin-bottom: 24px;
+            }
+            .stat-card {
+                background: var(--surface-card);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                padding: 16px;
+                display: flex;
+                flex-direction: column;
+            }
+            .stat-label { font-size: 12px; color: var(--text-sec); text-transform: uppercase; margin-bottom: 4px; }
+            .stat-val { font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: bold; color: var(--cyan); }
 
             .tabs { display: flex; gap: 8px; border-bottom: 1px solid var(--border); margin-bottom: 20px; overflow-x: auto; }
             .tab-btn {
@@ -411,7 +437,7 @@ async def admin_dashboard():
             </div>
             <div class="nav-actions">
                 <select id="langSelect" class="form-control" style="width: auto; padding: 6px 10px; background: var(--surface); color: var(--cyan); border-color: var(--cyan);" onchange="changeLang(this.value)">
-                    <option value="en">🇬邦 EN</option>
+                    <option value="en">🇬🇧 EN</option>
                     <option value="uz">🇺🇿 UZ</option>
                     <option value="ru">🇷🇺 RU</option>
                 </select>
@@ -433,6 +459,26 @@ async def admin_dashboard():
 
         <!-- Main Dashboard Container -->
         <div class="container" id="mainDashboard" style="display: none;">
+
+            <!-- Live Database & Ping Stats Bar -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="stat-label">🗄 DATABASE USAGE</span>
+                    <span class="stat-val" id="statDbSize">0.0 MB / 500 MB</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">⚡️ LATENCY PING</span>
+                    <span class="stat-val" style="color: var(--green);" id="statPing">0 ms</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">🔑 TOTAL KEYS</span>
+                    <span class="stat-val" id="statKeys">0 Keys</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">📱 ACTIVE USERS</span>
+                    <span class="stat-val" style="color: var(--green);" id="statUsers">0 Online</span>
+                </div>
+            </div>
             
             <!-- Navigation Tabs -->
             <div class="tabs">
@@ -611,9 +657,21 @@ async def admin_dashboard():
             }
 
             function loadDashboardData() {
+                loadStats();
                 loadKeys();
                 loadFiles();
                 loadUsers();
+            }
+
+            function loadStats() {
+                fetch("/api/admin/stats", { headers: { "Authorization": `Bearer ${adminToken}` } })
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById("statDbSize").innerText = `${data.size_mb} MB / ${data.max_mb} MB (${data.used_percent}%)`;
+                    document.getElementById("statPing").innerText = `${data.ping_ms} ms`;
+                    document.getElementById("statKeys").innerText = `${data.total_keys} Keys`;
+                    document.getElementById("statUsers").innerText = `${data.total_users} Active`;
+                });
             }
 
             function loadKeys() {
