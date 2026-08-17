@@ -139,22 +139,48 @@ async def verify_license(req: VerifyRequest):
 
 @app.get("/download/{file_id}")
 async def download_patch(file_id: int):
+    if file_id == 0:
+        files = database.get_all_files()
+        if files:
+            file_id = files[0][0]
+
     file_info = database.get_file_by_id(file_id)
     if not file_info:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Patch file not found."
+        files = database.get_all_files()
+        if files:
+            file_info = database.get_file_by_id(files[0][0])
+            
+    if not file_info:
+        # Fallback to default GitHub release URL if nothing in DB
+        default_cdn = "https://github.com/Cryosky399/ROXY-X-SYLS-site/releases/download/patches/lib.zip"
+        return RedirectResponse(url=default_cdn, status_code=307)
+        
+    file_name = file_info[0]
+    file_data = file_info[1]
+    ext_url = file_info[2] if len(file_info) > 2 else None
+    
+    # Priority 1: If external CDN URL exists, redirect directly with 307 (fastest direct CDN)
+    if ext_url and ext_url.startswith("http"):
+        return RedirectResponse(url=ext_url, status_code=307)
+        
+    # Priority 2: Check local disk cache
+    cache_path = os.path.join(CACHE_DIR, f"{file_id}_{file_name}")
+    if os.path.exists(cache_path):
+        return FileResponse(path=cache_path, filename=file_name, media_type="application/octet-stream")
+        
+    # Priority 3: Return raw BLOB from DB if present
+    if file_data:
+        return Response(
+            content=file_data,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename={file_name}",
+                "Content-Length": str(len(file_data))
+            }
         )
         
-    file_name, file_data = file_info
-    return Response(
-        content=file_data,
-        media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f"attachment; filename={file_name}",
-            "Content-Length": str(len(file_data))
-        }
-    )
+    default_cdn = "https://github.com/Cryosky399/ROXY-X-SYLS-site/releases/download/patches/lib.zip"
+    return RedirectResponse(url=default_cdn, status_code=307)
 
 # Telegram Notification Helper
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8684264908:AAE9FzHZH6LKG6hri8XJdsOvXMwqYlK0I_o")
