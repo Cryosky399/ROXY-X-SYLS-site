@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Header, status
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
 from io import BytesIO
 
 import database
@@ -97,12 +97,13 @@ async def download_patch(file_id: int):
         )
         
     file_name, file_data = file_info
-    file_stream = BytesIO(file_data)
-    
-    return StreamingResponse(
-        file_stream,
+    return Response(
+        content=file_data,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f"attachment; filename={file_name}"}
+        headers={
+            "Content-Disposition": f"attachment; filename={file_name}",
+            "Content-Length": str(len(file_data))
+        }
     )
 
 class ChatRequest(BaseModel):
