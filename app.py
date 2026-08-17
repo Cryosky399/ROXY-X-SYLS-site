@@ -747,10 +747,9 @@ async def admin_dashboard():
             </div>
             <div class="nav-actions">
                 <select id="langSelect" class="form-control" style="width: auto; padding: 6px 10px; background: var(--surface); color: var(--cyan); border-color: var(--cyan);" onchange="changeLanguage(this.value)">
-                    <option value="kk">🇰🇿 KK</option>
+                    <option value="en">🇬🇧 EN</option>
                     <option value="uz">🇺🇿 UZ</option>
                     <option value="ru">🇷🇺 RU</option>
-                    <option value="en">🇬🇧 EN</option>
                 </select>
                 <button class="btn btn-success" id="btnChangePassNav" onclick="openChangePassModal()">🔑 CHANGE PASS</button>
                 <button class="btn btn-danger" id="btnLogoutNav" onclick="logout()">LOGOUT</button>
@@ -833,7 +832,7 @@ async def admin_dashboard():
             <div id="filesTab" class="tab-content" style="display: none;">
                 <div class="card" style="margin-bottom: 20px;">
                     <div class="card-header">
-                        <span class="card-title">🚀 1-НҰСҚА: GITHUB RELEASES / CDN ТІКЕЛЕЙ СІЛТЕМЕСІ (ЕҢ ЖЫЛДАМ)</span>
+                        <span class="card-title">🚀 GITHUB RELEASES / CDN DIRECT LINK</span>
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 10px; align-items: end;">
                         <div class="form-group" style="margin-bottom: 0;">
@@ -844,13 +843,13 @@ async def admin_dashboard():
                             <label>GitHub / CDN Direct Download URL</label>
                             <input type="url" id="extFileUrl" class="form-control" placeholder="https://github.com/Cryosky399/.../releases/download/.../lib.zip">
                         </div>
-                        <button class="btn btn-success" style="height: 42px;" onclick="addExternalFile()">+ СІЛТЕМЕНІ ҚОСУ</button>
+                        <button class="btn btn-success" style="height: 42px;" onclick="addExternalFile()">+ ADD LINK</button>
                     </div>
                 </div>
 
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title" id="txtFilesTitle">⚡️ 2-НҰСҚА: ФАЙЛДЫ ТІКЕЛЕЙ СЕРВЕРГЕ ЖҮКТЕУ (DISK CACHE)</span>
+                        <span class="card-title" id="txtFilesTitle">UPLOAD PATCH FILES (lib.zip)</span>
                     </div>
                     <div class="form-group">
                         <input type="file" id="fileInput" class="form-control">
@@ -983,37 +982,9 @@ async def admin_dashboard():
 
         <script>
             let adminToken = localStorage.getItem("adminToken") || "";
-            let currentLang = localStorage.getItem("siteLang") || "kk";
+            let currentLang = localStorage.getItem("siteLang") || "en";
 
             const i18n = {
-                kk: {
-                    site_title: "ROXY X SKYLS",
-                    btn_change_pass: "🔑 ҚҰПИЯСӨЗДІ ӨЗГЕРТУ",
-                    btn_logout: "ШЫҒУ",
-                    tab_keys: "🔑 КІЛТТЕР МЕНЕДЖЕРІ",
-                    tab_files: "📁 ФАЙЛДАР МЕНЕДЖЕРІ",
-                    tab_users: "👥 ПАЙДАЛАНУШЫЛАР & БАН",
-                    tab_github: "⚙️ GITHUB RELEASES CDN",
-                    stat_db: "🗄 ДЕРЕКҚОР КӨЛЕМІ",
-                    stat_ping: "⚡️ ДЕРЕКҚОР ПИНГІ",
-                    stat_keys: "🔑 БАРЛЫҚ КІЛТТЕР",
-                    stat_users: "📱 БЕЛСЕНДІ ҚОЛДАНУШЫЛАР",
-                    keys_title: "КІЛТТЕРДІ БАСҚАРУ",
-                    btn_gen_key: "+ КІЛТ ЖАСАУ",
-                    files_title: "ПАТЧ ФАЙЛДАРЫН ЖҮКТЕУ (lib.zip)",
-                    users_title: "ПАЙДАЛАНУШЫЛАР ЖӘНЕ БАН ЖҮЙЕСІ",
-                    github_title: "⚙️ GITHUB RELEASES CDN ПАРАМЕТРЛЕРІ",
-                    btn_upload: "ФАЙЛДЫ ЖҮКТЕУ",
-                    btn_save_github: "💾 САҚТАУ",
-                    th_key: "Кілт коды",
-                    th_type: "Түрі / Файл",
-                    th_dur: "Мерзімі",
-                    th_max: "Құрылғылар",
-                    th_st: "Күйі",
-                    th_cr: "Жасалған",
-                    th_exp: "Аяқталуы",
-                    th_act: "Әрекеттер"
-                },
                 en: {
                     site_title: "ROXY X SKYLS",
                     btn_change_pass: "🔑 CHANGE PASS",
