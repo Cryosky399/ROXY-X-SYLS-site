@@ -377,11 +377,116 @@ async def admin_get_files(authenticated: bool = Depends(verify_admin)):
         })
     return files_list
 
+def upload_file_to_github_release(file_name: str, file_bytes: bytes) -> str:
+    gh_cfg = database.get_github_settings()
+    token = gh_cfg.get("token")
+    repo = gh_cfg.get("repo")
+    if not token or not repo:
+        return None
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    try:
+        # Check if release 'patches' exists, or create it
+        rel_res = requests.get(f"https://api.github.com/repos/{repo}/releases/tags/patches", headers=headers, timeout=10)
+        upload_url_template = None
+        if rel_res.status_code == 200:
+            rel_data = rel_res.json()
+            upload_url_template = rel_data.get("upload_url")
+        else:
+            create_rel = requests.post(
+                f"https://api.github.com/repos/{repo}/releases",
+                headers=headers,
+                json={
+                    "tag_name": "patches",
+                    "name": "ROXY X SKYLS Patch Files CDN",
+                    "body": "Automated patch files release storage",
+                    "draft": False,
+                    "prerelease": False
+                },
+                timeout=10
+            )
+            if create_rel.status_code in [200, 201]:
+                rel_data = create_rel.json()
+                upload_url_template = rel_data.get("upload_url")
+
+        if not upload_url_template:
+            logger.warning("Could not obtain GitHub release upload URL")
+            return None
+
+        upload_url = upload_url_template.split("{")[0]
+        clean_name = file_name.replace(" ", "_")
+        upload_headers = {
+            "Authorization": f"token {token}",
+            "Content-Type": "application/octet-stream"
+        }
+        upload_res = requests.post(
+            f"{upload_url}?name={clean_name}",
+            headers=upload_headers,
+            data=file_bytes,
+            timeout=60
+        )
+        if upload_res.status_code in [200, 201]:
+            asset_data = upload_res.json()
+            cdn_url = asset_data.get("browser_download_url")
+            logger.info(f"File uploaded to GitHub Release successfully: {cdn_url}")
+            return cdn_url
+        elif upload_res.status_code == 422:
+            ts = int(time.time())
+            unique_name = f"{ts}_{clean_name}"
+            upload_res2 = requests.post(
+                f"{upload_url}?name={unique_name}",
+                headers=upload_headers,
+                data=file_bytes,
+                timeout=60
+            )
+            if upload_res2.status_code in [200, 201]:
+                asset_data2 = upload_res2.json()
+                cdn_url = asset_data2.get("browser_download_url")
+                logger.info(f"File uploaded with unique name to GitHub Release: {cdn_url}")
+                return cdn_url
+    except Exception as e:
+        logger.error(f"Error uploading to GitHub Release: {e}")
+
+    return None
+
+class GitHubSettingsRequest(BaseModel):
+    token: str
+    repo: str
+
+@app.get("/api/admin/github_settings")
+async def admin_get_github_settings(authenticated: bool = Depends(verify_admin)):
+    return database.get_github_settings()
+
+@app.post("/api/admin/github_settings")
+async def admin_set_github_settings(req: GitHubSettingsRequest, authenticated: bool = Depends(verify_admin)):
+    database.set_github_settings(req.token.strip(), req.repo.strip())
+    return {"status": "success", "message": "GitHub settings saved successfully!"}
+
 @app.post("/api/admin/upload")
 async def admin_upload_file(file: UploadFile = File(...), authenticated: bool = Depends(verify_admin)):
     file_bytes = await file.read()
-    file_id = database.save_file(file.filename, file_bytes, None)
-    return {"status": "success", "file_id": file_id, "file_name": file.filename}
+    cdn_url = upload_file_to_github_release(file.filename, file_bytes)
+    file_id = database.save_file(file.filename, file_bytes, cdn_url)
+    
+    # Cache to server local disk as well
+    try:
+        cache_path = os.path.join(CACHE_DIR, f"{file_id}_{file.filename}")
+        with open(cache_path, "wb") as f:
+            f.write(file_bytes)
+    except Exception:
+        pass
+
+    return {
+        "status": "success",
+        "file_id": file_id,
+        "file_name": file.filename,
+        "external_url": cdn_url,
+        "mode": "GitHub CDN" if cdn_url else "Server Disk Cache"
+    }
 
 @app.post("/api/admin/add_external_file")
 async def admin_add_external_file(req: ExternalFileRequest, authenticated: bool = Depends(verify_admin)):
@@ -642,9 +747,10 @@ async def admin_dashboard():
             </div>
             <div class="nav-actions">
                 <select id="langSelect" class="form-control" style="width: auto; padding: 6px 10px; background: var(--surface); color: var(--cyan); border-color: var(--cyan);" onchange="changeLanguage(this.value)">
-                    <option value="en">🇬🇧 EN</option>
+                    <option value="kk">🇰🇿 KK</option>
                     <option value="uz">🇺🇿 UZ</option>
                     <option value="ru">🇷🇺 RU</option>
+                    <option value="en">🇬🇧 EN</option>
                 </select>
                 <button class="btn btn-success" id="btnChangePassNav" onclick="openChangePassModal()">🔑 CHANGE PASS</button>
                 <button class="btn btn-danger" id="btnLogoutNav" onclick="logout()">LOGOUT</button>
@@ -691,6 +797,7 @@ async def admin_dashboard():
                 <button class="tab-btn active" id="tabKeysBtn" onclick="switchTab('keysTab', this)">🔑 KEYS MANAGER</button>
                 <button class="tab-btn" id="tabFilesBtn" onclick="switchTab('filesTab', this)">📁 FILES MANAGER</button>
                 <button class="tab-btn" id="tabUsersBtn" onclick="switchTab('usersTab', this)">👥 ACTIVE USERS & BANS</button>
+                <button class="tab-btn" id="tabGithubBtn" onclick="switchTab('githubTab', this)">⚙️ GITHUB RELEASES CDN</button>
             </div>
 
             <!-- KEYS MANAGER TAB -->
@@ -795,6 +902,27 @@ async def admin_dashboard():
                 </div>
             </div>
 
+            <!-- GITHUB SETTINGS TAB -->
+            <div id="githubTab" class="tab-content" style="display: none;">
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-title" id="txtGithubTitle">⚙️ GITHUB RELEASES CDN CONFIGURATION</span>
+                    </div>
+                    <p style="color: var(--text-sec); margin-bottom: 16px;">
+                        Configure GitHub Personal Access Token and Repository to enable automatic high-speed CDN file releases upon upload.
+                    </p>
+                    <div class="form-group">
+                        <label>GitHub Personal Access Token (PAT with repo scope)</label>
+                        <input type="password" id="ghTokenInput" class="form-control" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+                    </div>
+                    <div class="form-group">
+                        <label>GitHub Repository (Owner/Repo)</label>
+                        <input type="text" id="ghRepoInput" class="form-control" placeholder="Cryosky399/ROXY-X-SYLS-site">
+                    </div>
+                    <button class="btn btn-success" id="btnSaveGhSettings" onclick="saveGithubSettings()">💾 SAVE GITHUB SETTINGS</button>
+                </div>
+            </div>
+
         </div>
 
         <!-- Generate Key Modal -->
@@ -855,9 +983,37 @@ async def admin_dashboard():
 
         <script>
             let adminToken = localStorage.getItem("adminToken") || "";
-            let currentLang = localStorage.getItem("siteLang") || "en";
+            let currentLang = localStorage.getItem("siteLang") || "kk";
 
             const i18n = {
+                kk: {
+                    site_title: "ROXY X SKYLS",
+                    btn_change_pass: "🔑 ҚҰПИЯСӨЗДІ ӨЗГЕРТУ",
+                    btn_logout: "ШЫҒУ",
+                    tab_keys: "🔑 КІЛТТЕР МЕНЕДЖЕРІ",
+                    tab_files: "📁 ФАЙЛДАР МЕНЕДЖЕРІ",
+                    tab_users: "👥 ПАЙДАЛАНУШЫЛАР & БАН",
+                    tab_github: "⚙️ GITHUB RELEASES CDN",
+                    stat_db: "🗄 ДЕРЕКҚОР КӨЛЕМІ",
+                    stat_ping: "⚡️ ДЕРЕКҚОР ПИНГІ",
+                    stat_keys: "🔑 БАРЛЫҚ КІЛТТЕР",
+                    stat_users: "📱 БЕЛСЕНДІ ҚОЛДАНУШЫЛАР",
+                    keys_title: "КІЛТТЕРДІ БАСҚАРУ",
+                    btn_gen_key: "+ КІЛТ ЖАСАУ",
+                    files_title: "ПАТЧ ФАЙЛДАРЫН ЖҮКТЕУ (lib.zip)",
+                    users_title: "ПАЙДАЛАНУШЫЛАР ЖӘНЕ БАН ЖҮЙЕСІ",
+                    github_title: "⚙️ GITHUB RELEASES CDN ПАРАМЕТРЛЕРІ",
+                    btn_upload: "ФАЙЛДЫ ЖҮКТЕУ",
+                    btn_save_github: "💾 САҚТАУ",
+                    th_key: "Кілт коды",
+                    th_type: "Түрі / Файл",
+                    th_dur: "Мерзімі",
+                    th_max: "Құрылғылар",
+                    th_st: "Күйі",
+                    th_cr: "Жасалған",
+                    th_exp: "Аяқталуы",
+                    th_act: "Әрекеттер"
+                },
                 en: {
                     site_title: "ROXY X SKYLS",
                     btn_change_pass: "🔑 CHANGE PASS",
@@ -865,6 +1021,7 @@ async def admin_dashboard():
                     tab_keys: "🔑 KEYS MANAGER",
                     tab_files: "📁 FILES MANAGER",
                     tab_users: "👥 ACTIVE USERS & BANS",
+                    tab_github: "⚙️ GITHUB RELEASES CDN",
                     stat_db: "🗄 DATABASE USAGE",
                     stat_ping: "⚡️ LATENCY PING",
                     stat_keys: "🔑 TOTAL KEYS",
@@ -873,7 +1030,9 @@ async def admin_dashboard():
                     btn_gen_key: "+ GENERATE KEY",
                     files_title: "UPLOAD PATCH FILES (lib.zip)",
                     users_title: "ACTIVE USERS & BAN SYSTEM",
+                    github_title: "⚙️ GITHUB RELEASES CDN CONFIGURATION",
                     btn_upload: "UPLOAD PATCH FILE",
+                    btn_save_github: "💾 SAVE GITHUB SETTINGS",
                     th_key: "Key String",
                     th_type: "Type / File",
                     th_dur: "Duration",
@@ -890,6 +1049,7 @@ async def admin_dashboard():
                     tab_keys: "🔑 KALITLAR",
                     tab_files: "📁 FAYLLAR",
                     tab_users: "👥 FOYDALANUVCHILAR & BAN",
+                    tab_github: "⚙️ GITHUB RELEASES CDN",
                     stat_db: "🗄 BAZA HAJMI",
                     stat_ping: "⚡️ BAZA TEZLIGI (PING)",
                     stat_keys: "🔑 JAMI KALITLAR",
@@ -898,7 +1058,9 @@ async def admin_dashboard():
                     btn_gen_key: "+ KALIT YARATISH",
                     files_title: "FAYL YUKLASH (lib.zip)",
                     users_title: "FOYDALANUVCHILAR VA BAN TIZIMI",
+                    github_title: "⚙️ GITHUB RELEASES CDN SOZLAMALARI",
                     btn_upload: "FAYLI YUKLASH",
+                    btn_save_github: "💾 SAQLASH",
                     th_key: "Kalit Kodi",
                     th_type: "Turi / Fayl",
                     th_dur: "Muddati",
@@ -915,6 +1077,7 @@ async def admin_dashboard():
                     tab_keys: "🔑 МЕНЕДЖЕР КЛЮЧЕЙ",
                     tab_files: "📁 МЕНЕДЖЕР ФАЙЛОВ",
                     tab_users: "👥 ПОЛЬЗОВАТЕЛИ И БАНЫ",
+                    tab_github: "⚙️ GITHUB RELEASES CDN",
                     stat_db: "🗄 РАЗМЕР БАЗЫ ДАННЫХ",
                     stat_ping: "⚡️ ПИНГ БАЗЫ ДАННЫХ",
                     stat_keys: "🔑 ВСЕГО КЛЮЧЕЙ",
@@ -923,7 +1086,9 @@ async def admin_dashboard():
                     btn_gen_key: "+ СОЗДАТЬ КЛЮЧ",
                     files_title: "ЗАГРУЗИТЬ ФАЙЛ (lib.zip)",
                     users_title: "СИСТЕМА БАНОВ И МУТОВ",
+                    github_title: "⚙️ НАСТРОЙКИ GITHUB RELEASES CDN",
                     btn_upload: "ЗАГРУЗИТЬ ФАЙЛ",
+                    btn_save_github: "💾 СОХРАНИТЬ",
                     th_key: "Код Ключа",
                     th_type: "Тип / Файл",
                     th_dur: "Срок",
@@ -961,6 +1126,9 @@ async def admin_dashboard():
                 setTxt("btnOpenGenKey", t.btn_gen_key);
                 setTxt("txtFilesTitle", t.files_title);
                 setTxt("txtUsersTitle", t.users_title);
+                setTxt("tabGithubBtn", t.tab_github);
+                setTxt("txtGithubTitle", t.github_title);
+                setTxt("btnSaveGhSettings", t.btn_save_github);
                 setTxt("btnUploadFile", t.btn_upload);
                 setTxt("thKey", t.th_key);
                 setTxt("thType", t.th_type);
@@ -1045,6 +1213,36 @@ async def admin_dashboard():
                 loadKeys();
                 loadFiles();
                 loadUsers();
+                loadGithubSettings();
+            }
+
+            function loadGithubSettings() {
+                fetch("/api/admin/github_settings", { headers: { "Authorization": `Bearer ${adminToken}` } })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.token) document.getElementById("ghTokenInput").value = data.token;
+                    if (data.repo) document.getElementById("ghRepoInput").value = data.repo;
+                });
+            }
+
+            function saveGithubSettings() {
+                const token = document.getElementById("ghTokenInput").value.trim();
+                const repo = document.getElementById("ghRepoInput").value.trim();
+                if (!token || !repo) return alert("Please fill in both token and repo!");
+
+                fetch("/api/admin/github_settings", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` },
+                    body: JSON.stringify({ token: token, repo: repo })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === "success") {
+                        alert("GitHub settings saved successfully!");
+                    } else {
+                        alert("Error saving GitHub settings!");
+                    }
+                });
             }
 
             function loadStats() {

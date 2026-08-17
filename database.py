@@ -203,11 +203,51 @@ def get_admin_password():
 def set_admin_password(new_pass: str):
     conn = get_connection()
     cursor = conn.cursor()
-    is_postgres = DATABASE_URL is not None
+    is_postgres = _using_postgres
     if is_postgres:
         cursor.execute("INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", ("admin_password", new_pass))
     else:
         cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("admin_password", new_pass))
+    conn.commit()
+    conn.close()
+
+def get_github_settings():
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = _using_postgres
+    token = os.getenv("GITHUB_TOKEN", "")
+    repo = os.getenv("GITHUB_REPO", "Cryosky399/ROXY-X-SYLS-site")
+    try:
+        if is_postgres:
+            cursor.execute("SELECT value FROM settings WHERE key = %s", ("github_token",))
+        else:
+            cursor.execute("SELECT value FROM settings WHERE key = ?", ("github_token",))
+        row = cursor.fetchone()
+        if row and row[0]:
+            token = row[0]
+            
+        if is_postgres:
+            cursor.execute("SELECT value FROM settings WHERE key = %s", ("github_repo",))
+        else:
+            cursor.execute("SELECT value FROM settings WHERE key = ?", ("github_repo",))
+        row = cursor.fetchone()
+        if row and row[0]:
+            repo = row[0]
+    except Exception:
+        pass
+    conn.close()
+    return {"token": token, "repo": repo}
+
+def set_github_settings(token: str, repo: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = _using_postgres
+    if is_postgres:
+        cursor.execute("INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", ("github_token", token))
+        cursor.execute("INSERT INTO settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", ("github_repo", repo))
+    else:
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("github_token", token))
+        cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", ("github_repo", repo))
     conn.commit()
     conn.close()
 
