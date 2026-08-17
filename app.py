@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pydantic import BaseModel
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Header, status
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response, RedirectResponse, FileResponse
 from io import BytesIO
 
 import database
@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 # Config
 SITE_URL = os.getenv("RENDER_EXTERNAL_URL", "https://roxy-x-syls-site.onrender.com")
+CACHE_DIR = "/tmp/patches_cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 # 24/7 Self Keep-Alive Loop (Every 10 minutes)
 def keep_alive_loop():
@@ -40,7 +42,55 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=keep_alive_loop, daemon=True).start()
     yield
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(title="ROXY-X-SKYLS Patcher Server", lifespan=lifespan)
+
+# --- PUBLIC API ---
+
+@app.get("/ping")
+async def ping():
+    return {"status": "ok", "time": str(datetime.utcnow())}
+
+class VerifyRequest(BaseModel):
+    key: str
+    device_id: str
+
+@app.post("/verify")
+async def verify_license(req: VerifyRequest):
+    logger.info(f"Verification call: key={req.key}, device_id={req.device_id}")
+    result = database.verify_key(req.key, req.device_id)
+    return result
+
+@app.get("/download/{file_id}")
+async def download_patch(file_id: int):
+    file_info = database.get_file_by_id(file_id)
+    if not file_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Patch file not found."
+        )
+        
+    file_name = file_info[0]
+    file_data = file_info[1]
+    external_url = file_info[2] if len(file_info) > 2 else None
+
+    # Option 1: Direct High-Speed CDN / GitHub Release Redirect
+    if external_url and external_url.startswith("http"):
+        return RedirectResponse(url=external_url, status_code=307)
+
+    # Option 2: Server Local Disk Cache with zero-copy FileResponse
+    cache_file_path = os.path.join(CACHE_DIR, f"{file_id}_{file_name}")
+    if not os.path.exists(cache_file_path) or os.path.getsize(cache_file_path) == 0:
+        if file_data:
+            with open(cache_file_path, "wb") as f:
+                f.write(file_data)
+        else:
+            raise HTTPException(status_code=404, detail="File content not available.")
+
+    return FileResponse(
+        path=cache_file_path,
+        media_type="application/octet-stream",
+        filename=file_name
+    )
 
 # Helper function to generate keys: ROXY-X-SKYLS- + 6 random chars (2 numbers, 4 random upper/lower letters)
 def generate_key_string(prefix="ROXY-X-SKYLS") -> str:
@@ -214,7 +264,8 @@ async def api_get_files():
         result.append({
             "id": f[0],
             "file_name": f[1],
-            "uploaded_at": str(f[2])
+            "uploaded_at": str(f[2]),
+            "external_url": f[3] if len(f) > 3 else None
         })
     return result
 
@@ -305,24 +356,39 @@ async def admin_login(payload: dict):
         return {"status": "success", "token": password}
     raise HTTPException(status_code=401, detail="Incorrect password")
 
+class ExternalFileRequest(BaseModel):
+    file_name: str
+    download_url: str
+
 @app.get("/api/admin/files")
 async def admin_get_files(authenticated: bool = Depends(verify_admin)):
     files = database.get_all_files()
     files_list = []
     for row in files:
-        fid, fname, uploaded_at = row
+        fid = row[0]
+        fname = row[1]
+        uploaded_at = row[2]
+        ext_url = row[3] if len(row) > 3 else None
         files_list.append({
             "id": fid,
             "file_name": fname,
-            "uploaded_at": str(uploaded_at)
+            "uploaded_at": str(uploaded_at),
+            "external_url": ext_url
         })
     return files_list
 
 @app.post("/api/admin/upload")
 async def admin_upload_file(file: UploadFile = File(...), authenticated: bool = Depends(verify_admin)):
     file_bytes = await file.read()
-    file_id = database.save_file(file.filename, file_bytes)
+    file_id = database.save_file(file.filename, file_bytes, None)
     return {"status": "success", "file_id": file_id, "file_name": file.filename}
+
+@app.post("/api/admin/add_external_file")
+async def admin_add_external_file(req: ExternalFileRequest, authenticated: bool = Depends(verify_admin)):
+    if not req.download_url or not req.download_url.startswith("http"):
+        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+    file_id = database.save_file(req.file_name, None, req.download_url)
+    return {"status": "success", "file_id": file_id, "file_name": req.file_name, "external_url": req.download_url}
 
 @app.delete("/api/admin/files/{file_id}")
 async def admin_delete_file(file_id: int, authenticated: bool = Depends(verify_admin)):
@@ -658,9 +724,26 @@ async def admin_dashboard():
 
             <!-- FILES MANAGER TAB -->
             <div id="filesTab" class="tab-content" style="display: none;">
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header">
+                        <span class="card-title">🚀 1-НҰСҚА: GITHUB RELEASES / CDN ТІКЕЛЕЙ СІЛТЕМЕСІ (ЕҢ ЖЫЛДАМ)</span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 10px; align-items: end;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>File Name</label>
+                            <input type="text" id="extFileName" class="form-control" placeholder="lib.zip" value="lib.zip">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>GitHub / CDN Direct Download URL</label>
+                            <input type="url" id="extFileUrl" class="form-control" placeholder="https://github.com/Cryosky399/.../releases/download/.../lib.zip">
+                        </div>
+                        <button class="btn btn-success" style="height: 42px;" onclick="addExternalFile()">+ СІЛТЕМЕНІ ҚОСУ</button>
+                    </div>
+                </div>
+
                 <div class="card">
                     <div class="card-header">
-                        <span class="card-title" id="txtFilesTitle">UPLOAD PATCH FILES (lib.zip)</span>
+                        <span class="card-title" id="txtFilesTitle">⚡️ 2-НҰСҚА: ФАЙЛДЫ ТІКЕЛЕЙ СЕРВЕРГЕ ЖҮКТЕУ (DISK CACHE)</span>
                     </div>
                     <div class="form-group">
                         <input type="file" id="fileInput" class="form-control">
@@ -673,6 +756,7 @@ async def admin_dashboard():
                                 <tr>
                                     <th>ID</th>
                                     <th>File Name</th>
+                                    <th>Type / Source</th>
                                     <th>Uploaded At</th>
                                     <th>Action</th>
                                 </tr>
@@ -1016,10 +1100,15 @@ async def admin_dashboard():
                     select.innerHTML = "";
 
                     data.forEach(f => {
+                        const typeBadge = f.external_url 
+                            ? `<span class="badge badge-active" style="font-size:11px;">🌐 CDN: ${f.external_url.substring(0, 30)}...</span>` 
+                            : `<span class="badge badge-unused" style="font-size:11px;">📁 Local / DB</span>`;
+
                         tbody.innerHTML += `
                             <tr>
                                 <td>${f.id}</td>
-                                <td>${f.file_name}</td>
+                                <td style="font-weight:bold;">${f.file_name}</td>
+                                <td>${typeBadge}</td>
                                 <td>${f.uploaded_at.split('T')[0]}</td>
                                 <td><button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="deleteFile(${f.id})">Delete</button></td>
                             </tr>
@@ -1118,6 +1207,28 @@ async def admin_dashboard():
                         loadFiles();
                     } else {
                         alert("Error uploading file!");
+                    }
+                });
+            }
+
+            function addExternalFile() {
+                const fname = document.getElementById("extFileName").value.trim() || "lib.zip";
+                const furl = document.getElementById("extFileUrl").value.trim();
+                if (!furl || !furl.startsWith("http")) return alert("Please enter a valid URL starting with https://");
+
+                fetch("/api/admin/add_external_file", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` },
+                    body: JSON.stringify({ file_name: fname, download_url: furl })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === "success") {
+                        alert("CDN / GitHub File Link Added Successfully!");
+                        document.getElementById("extFileUrl").value = "";
+                        loadFiles();
+                    } else {
+                        alert("Error adding link: " + (data.detail || "Unknown error"));
                     }
                 });
             }

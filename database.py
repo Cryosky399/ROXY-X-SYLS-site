@@ -96,6 +96,8 @@ def init_db():
             cursor.execute("ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS is_disabled BOOLEAN DEFAULT FALSE;")
             cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS balance NUMERIC(10, 2) DEFAULT 0.00;")
             cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';")
+            cursor.execute("ALTER TABLE patch_files ADD COLUMN IF NOT EXISTS external_url TEXT DEFAULT NULL;")
+            cursor.execute("ALTER TABLE patch_files ALTER COLUMN file_data DROP NOT NULL;")
         except Exception as e:
             print(f"PostgreSQL migration notice: {e}")
     else:
@@ -174,6 +176,10 @@ def init_db():
             cursor.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0.00;")
         except Exception:
             pass
+        try:
+            cursor.execute("ALTER TABLE patch_files ADD COLUMN external_url TEXT;")
+        except Exception:
+            pass
     conn.commit()
     conn.close()
 
@@ -207,23 +213,23 @@ def set_admin_password(new_pass: str):
 
 # --- FILE OPERATIONS ---
 
-def save_file(file_name: str, file_data: bytes):
+def save_file(file_name: str, file_data: bytes = None, external_url: str = None):
     conn = get_connection()
     cursor = conn.cursor()
-    is_postgres = DATABASE_URL is not None
+    is_postgres = _using_postgres
     now = datetime.utcnow()
     uploaded_at = now if is_postgres else now.isoformat()
     
     if is_postgres:
         cursor.execute(
-            "INSERT INTO patch_files (file_name, file_data, uploaded_at) VALUES (%s, %s, %s) RETURNING id",
-            (file_name, file_data, uploaded_at)
+            "INSERT INTO patch_files (file_name, file_data, external_url, uploaded_at) VALUES (%s, %s, %s, %s) RETURNING id",
+            (file_name, file_data, external_url, uploaded_at)
         )
         file_id = cursor.fetchone()[0]
     else:
         cursor.execute(
-            "INSERT INTO patch_files (file_name, file_data, uploaded_at) VALUES (?, ?, ?)",
-            (file_name, file_data, uploaded_at)
+            "INSERT INTO patch_files (file_name, file_data, external_url, uploaded_at) VALUES (?, ?, ?, ?)",
+            (file_name, file_data, external_url, uploaded_at)
         )
         file_id = cursor.lastrowid
         
@@ -234,7 +240,10 @@ def save_file(file_name: str, file_data: bytes):
 def get_all_files():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, file_name, uploaded_at FROM patch_files ORDER BY uploaded_at DESC")
+    try:
+        cursor.execute("SELECT id, file_name, uploaded_at, external_url FROM patch_files ORDER BY uploaded_at DESC")
+    except Exception:
+        cursor.execute("SELECT id, file_name, uploaded_at, NULL as external_url FROM patch_files ORDER BY uploaded_at DESC")
     rows = cursor.fetchall()
     conn.close()
     return rows
@@ -242,11 +251,17 @@ def get_all_files():
 def get_file_by_id(file_id: int):
     conn = get_connection()
     cursor = conn.cursor()
-    is_postgres = DATABASE_URL is not None
-    if is_postgres:
-        cursor.execute("SELECT file_name, file_data FROM patch_files WHERE id = %s", (file_id,))
-    else:
-        cursor.execute("SELECT file_name, file_data FROM patch_files WHERE id = ?", (file_id,))
+    is_postgres = _using_postgres
+    try:
+        if is_postgres:
+            cursor.execute("SELECT file_name, file_data, external_url FROM patch_files WHERE id = %s", (file_id,))
+        else:
+            cursor.execute("SELECT file_name, file_data, external_url FROM patch_files WHERE id = ?", (file_id,))
+    except Exception:
+        if is_postgres:
+            cursor.execute("SELECT file_name, file_data, NULL as external_url FROM patch_files WHERE id = %s", (file_id,))
+        else:
+            cursor.execute("SELECT file_name, file_data, NULL as external_url FROM patch_files WHERE id = ?", (file_id,))
     row = cursor.fetchone()
     conn.close()
     return row
