@@ -83,10 +83,21 @@ def init_db():
                 sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                username VARCHAR(50) PRIMARY KEY,
+                password_hash VARCHAR(255) NOT NULL,
+                balance NUMERIC(10, 2) DEFAULT 0.00,
+                role VARCHAR(20) DEFAULT 'user',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         try:
             cursor.execute("ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS is_disabled BOOLEAN DEFAULT FALSE;")
+            cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS balance NUMERIC(10, 2) DEFAULT 0.00;")
+            cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user';")
         except Exception as e:
-            print(f"PostgreSQL migration notice (is_disabled): {e}")
+            print(f"PostgreSQL migration notice: {e}")
     else:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -146,8 +157,21 @@ def init_db():
                 sent_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                balance REAL DEFAULT 0.00,
+                role TEXT DEFAULT 'user',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         try:
             cursor.execute("ALTER TABLE license_keys ADD COLUMN is_disabled INTEGER DEFAULT 0;")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0.00;")
         except Exception:
             pass
     conn.commit()
@@ -588,3 +612,204 @@ def get_db_stats():
         "max_mb": max_mb,
         "used_percent": used_percent
     }
+
+# --- USER AUTH & BALANCE OPERATIONS ---
+
+import hashlib
+
+def _hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+def register_user(username: str, password: str) -> dict:
+    username = username.strip()
+    if not username or not password:
+        return {"status": "error", "message": "Username and password required"}
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = _using_postgres
+    
+    try:
+        # Check if user exists
+        if is_postgres:
+            cursor.execute("SELECT username FROM users WHERE LOWER(username) = LOWER(%s)", (username,))
+        else:
+            cursor.execute("SELECT username FROM users WHERE LOWER(username) = LOWER(?)", (username,))
+        if cursor.fetchone():
+            conn.close()
+            return {"status": "error", "message": "Username already exists"}
+        
+        pwd_hash = _hash_password(password)
+        now = datetime.utcnow()
+        created_at = now if is_postgres else now.isoformat()
+        
+        if is_postgres:
+            cursor.execute("INSERT INTO users (username, password_hash, balance, role, created_at) VALUES (%s, %s, 0.00, 'user', %s)", (username, pwd_hash, created_at))
+        else:
+            cursor.execute("INSERT INTO users (username, password_hash, balance, role, created_at) VALUES (?, ?, 0.00, 'user', ?)", (username, pwd_hash, created_at))
+        conn.commit()
+        conn.close()
+        return {"status": "success", "username": username, "balance": 0.00, "role": "user"}
+    except Exception as e:
+        conn.close()
+        return {"status": "error", "message": str(e)}
+
+def login_user(username: str, password: str) -> dict:
+    username = username.strip()
+    if not username or not password:
+        return {"status": "error", "message": "Username and password required"}
+        
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = _using_postgres
+    pwd_hash = _hash_password(password)
+    
+    try:
+        if is_postgres:
+            cursor.execute("SELECT username, password_hash, balance, role FROM users WHERE LOWER(username) = LOWER(%s)", (username,))
+        else:
+            cursor.execute("SELECT username, password_hash, balance, role FROM users WHERE LOWER(username) = LOWER(?)", (username,))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row:
+            return {"status": "error", "message": "User not found"}
+        
+        u_name, u_hash, u_bal, u_role = row
+        if u_hash != pwd_hash:
+            return {"status": "error", "message": "Incorrect password"}
+            
+        return {
+            "status": "success",
+            "username": u_name,
+            "balance": float(u_bal or 0.0),
+            "role": u_role or "user"
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def get_user_info(username: str) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = _using_postgres
+    try:
+        if is_postgres:
+            cursor.execute("SELECT username, balance, role, created_at FROM users WHERE LOWER(username) = LOWER(%s)", (username,))
+        else:
+            cursor.execute("SELECT username, balance, role, created_at FROM users WHERE LOWER(username) = LOWER(?)", (username,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return {"status": "error", "message": "User not found"}
+        return {
+            "status": "success",
+            "username": row[0],
+            "balance": float(row[1] or 0.0),
+            "role": row[2] or "user",
+            "created_at": str(row[3])
+        }
+    except Exception as e:
+        conn.close()
+        return {"status": "error", "message": str(e)}
+
+def get_all_users() -> list:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT username, balance, role, created_at FROM users ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            result.append({
+                "username": r[0],
+                "balance": float(r[1] or 0.0),
+                "role": r[2] or "user",
+                "created_at": str(r[3])
+            })
+        return result
+    except Exception:
+        conn.close()
+        return []
+
+def set_user_balance(username: str, amount: float, mode: str = "add") -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = _using_postgres
+    try:
+        # First ensure user exists or get current balance
+        if is_postgres:
+            cursor.execute("SELECT username, balance FROM users WHERE LOWER(username) = LOWER(%s)", (username,))
+        else:
+            cursor.execute("SELECT username, balance FROM users WHERE LOWER(username) = LOWER(?)", (username,))
+        row = cursor.fetchone()
+        
+        if not row:
+            # Auto-create user if they don't exist yet
+            pwd_hash = _hash_password("123456")
+            now = datetime.utcnow()
+            created_at = now if is_postgres else now.isoformat()
+            new_bal = amount if mode == "set" or mode == "add" else 0.0
+            if is_postgres:
+                cursor.execute("INSERT INTO users (username, password_hash, balance, role, created_at) VALUES (%s, %s, %s, 'user', %s)", (username, pwd_hash, new_bal, created_at))
+            else:
+                cursor.execute("INSERT INTO users (username, password_hash, balance, role, created_at) VALUES (?, ?, ?, 'user', ?)", (username, pwd_hash, new_bal, created_at))
+            conn.commit()
+            conn.close()
+            return {"status": "success", "username": username, "new_balance": float(new_bal)}
+            
+        real_username, current_bal = row
+        current_bal = float(current_bal or 0.0)
+        
+        if mode == "add":
+            new_bal = round(current_bal + amount, 2)
+        else:
+            new_bal = round(amount, 2)
+            
+        if new_bal < 0:
+            new_bal = 0.0
+            
+        if is_postgres:
+            cursor.execute("UPDATE users SET balance = %s WHERE username = %s", (new_bal, real_username))
+        else:
+            cursor.execute("UPDATE users SET balance = ? WHERE username = ?", (new_bal, real_username))
+            
+        conn.commit()
+        conn.close()
+        return {"status": "success", "username": real_username, "new_balance": new_bal}
+    except Exception as e:
+        conn.close()
+        return {"status": "error", "message": str(e)}
+
+def deduct_user_balance(username: str, cost: float) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    is_postgres = _using_postgres
+    try:
+        if is_postgres:
+            cursor.execute("SELECT username, balance FROM users WHERE LOWER(username) = LOWER(%s)", (username,))
+        else:
+            cursor.execute("SELECT username, balance FROM users WHERE LOWER(username) = LOWER(?)", (username,))
+        row = cursor.fetchone()
+        if not row:
+            conn.close()
+            return False
+            
+        real_username, current_bal = row
+        current_bal = float(current_bal or 0.0)
+        if current_bal < cost:
+            conn.close()
+            return False
+            
+        new_bal = round(current_bal - cost, 2)
+        if is_postgres:
+            cursor.execute("UPDATE users SET balance = %s WHERE username = %s", (new_bal, real_username))
+        else:
+            cursor.execute("UPDATE users SET balance = ? WHERE username = ?", (new_bal, real_username))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        conn.close()
+        return False
+

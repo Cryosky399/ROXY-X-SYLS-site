@@ -106,6 +106,118 @@ async def download_patch(file_id: int):
         }
     )
 
+# Telegram Notification Helper
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8684264908:AAE9FzHZH6LKG6hri8XJdsOvXMwqYlK0I_o")
+TELEGRAM_ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")
+
+def notify_telegram(message: str):
+    if not TELEGRAM_BOT_TOKEN:
+        return
+    def _send():
+        try:
+            chat_id = TELEGRAM_ADMIN_CHAT_ID
+            if not chat_id:
+                try:
+                    res = requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates", timeout=5).json()
+                    if res.get("result"):
+                        chat_id = res["result"][-1].get("message", {}).get("chat", {}).get("id")
+                except Exception:
+                    pass
+            if chat_id:
+                requests.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+                    json={"chat_id": chat_id, "text": message, "parse_mode": "HTML"},
+                    timeout=5
+                )
+        except Exception as e:
+            logger.error(f"Telegram notify error: {e}")
+    threading.Thread(target=_send, daemon=True).start()
+
+class AuthRequest(BaseModel):
+    username: str
+    password: str
+
+class BalanceRequest(BaseModel):
+    username: str
+    amount: float
+    mode: str = "add"  # 'add' or 'set'
+
+class BuyKeyRequest(BaseModel):
+    username: str
+    duration_days: int = 1
+    file_id: int = 1
+
+@app.post("/api/user/register")
+async def api_register(req: AuthRequest):
+    res = database.register_user(req.username, req.password)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    notify_telegram(f"🆕 <b>NEW USER REGISTERED</b>\n👤 Username: <code>{req.username}</code>")
+    return res
+
+@app.post("/api/user/login")
+async def api_login(req: AuthRequest):
+    res = database.login_user(req.username, req.password)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return res
+
+@app.get("/api/user/info/{username}")
+async def api_user_info(username: str):
+    res = database.get_user_info(username)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail="User not found")
+    return res
+
+@app.post("/api/user/buy_key")
+async def api_buy_key(req: BuyKeyRequest):
+    prices = {1: 1.00, 3: 2.00, 7: 4.00, 30: 10.00}
+    cost = prices.get(req.duration_days, 1.00 * req.duration_days)
+
+    u_info = database.get_user_info(req.username)
+    if u_info.get("status") == "error":
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    current_bal = u_info.get("balance", 0.0)
+    if current_bal < cost:
+        raise HTTPException(status_code=400, detail=f"Insufficient balance. Required: ${cost:.2f}, Available: ${current_bal:.2f}")
+
+    if not database.deduct_user_balance(req.username, cost):
+        raise HTTPException(status_code=400, detail="Failed to deduct balance")
+
+    key = f"ROXY-{''.join(random.choices(string.ascii_uppercase + string.digits, k=8))}"
+    file_id = req.file_id
+    files = database.get_all_files()
+    if not files:
+        raise HTTPException(status_code=400, detail="No patch files available on server")
+    if file_id == 0 or not any(f[0] == file_id for f in files):
+        file_id = files[0][0]
+
+    database.create_key(key, file_id, req.duration_days, 1)
+
+    notify_telegram(f"🛒 <b>NEW KEY PURCHASED VIA BALANCE!</b>\n👤 <b>User:</b> {req.username}\n💰 <b>Cost:</b> ${cost:.2f}\n🔑 <b>Key:</b> <code>{key}</code>\n⏳ <b>Duration:</b> {req.duration_days} Days")
+
+    new_info = database.get_user_info(req.username)
+    return {
+        "status": "success",
+        "key": key,
+        "duration_days": req.duration_days,
+        "cost": cost,
+        "new_balance": new_info.get("balance", 0.0)
+    }
+
+@app.get("/api/files")
+async def api_get_files():
+    files = database.get_all_files()
+    result = []
+    for f in files:
+        result.append({
+            "id": f[0],
+            "file_name": f[1],
+            "uploaded_at": str(f[2])
+        })
+    return result
+
 class ChatRequest(BaseModel):
     device_id: str
     sender: str
@@ -165,6 +277,18 @@ async def admin_get_stats(authenticated: bool = Depends(verify_admin)):
     stats["total_keys"] = len(keys)
     stats["total_users"] = len(users)
     return stats
+
+@app.get("/api/admin/users")
+async def admin_get_users(authenticated: bool = Depends(verify_admin)):
+    return database.get_all_users()
+
+@app.post("/api/admin/set_balance")
+async def admin_set_balance(req: BalanceRequest, authenticated: bool = Depends(verify_admin)):
+    res = database.set_user_balance(req.username, req.amount, req.mode)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    notify_telegram(f"💳 <b>BALANCE UPDATED BY ADMIN</b>\n👤 User: <code>{req.username}</code>\n💵 New Balance: <b>${res.get('new_balance'):.2f}</b>")
+    return res
 
 @app.post("/api/admin/change_password")
 async def admin_change_password(req: ChangePassRequest, authenticated: bool = Depends(verify_admin)):
