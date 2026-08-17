@@ -83,6 +83,10 @@ def init_db():
                 sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        try:
+            cursor.execute("ALTER TABLE license_keys ADD COLUMN IF NOT EXISTS is_disabled BOOLEAN DEFAULT FALSE;")
+        except Exception as e:
+            print(f"PostgreSQL migration notice (is_disabled): {e}")
     else:
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -142,6 +146,10 @@ def init_db():
                 sent_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        try:
+            cursor.execute("ALTER TABLE license_keys ADD COLUMN is_disabled INTEGER DEFAULT 0;")
+        except Exception:
+            pass
     conn.commit()
     conn.close()
 
