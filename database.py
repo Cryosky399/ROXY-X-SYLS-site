@@ -111,7 +111,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS patch_files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_name TEXT NOT NULL,
-                file_data BLOB NOT NULL,
+                file_data BLOB,
                 uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
