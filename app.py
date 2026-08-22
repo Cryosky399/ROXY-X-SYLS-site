@@ -754,6 +754,58 @@ async def admin_dashboard():
                 color: #fff; padding: 10px; border-radius: 6px; font-size: 14px;
             }
 
+            /* Upload Progress Bar */
+            .upload-progress-container {
+                display: none;
+                margin-top: 16px;
+                background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 16px;
+            }
+            .progress-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 8px;
+                font-size: 14px;
+            }
+            .progress-status {
+                color: var(--cyan);
+                font-weight: 700;
+            }
+            .progress-percent {
+                color: var(--green);
+                font-family: 'Orbitron', sans-serif;
+                font-weight: bold;
+                font-size: 15px;
+            }
+            .progress-track {
+                width: 100%;
+                height: 12px;
+                background: #0d1220;
+                border-radius: 6px;
+                overflow: hidden;
+                position: relative;
+                border: 1px solid var(--border);
+            }
+            .progress-fill {
+                width: 0%;
+                height: 100%;
+                background: linear-gradient(90deg, #00F0FF, #00FF66);
+                box-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+                transition: width 0.1s linear;
+                border-radius: 6px;
+            }
+            .progress-footer {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-top: 8px;
+                font-size: 13px;
+                color: var(--text-sec);
+            }
+
             /* Responsive Mobile Adjustments (@media) */
             @media (max-width: 768px) {
                 .top-navbar { padding: 12px 16px; flex-direction: row; }
@@ -878,9 +930,27 @@ async def admin_dashboard():
                         <span class="card-title" id="txtFilesTitle">UPLOAD PATCH FILES (lib.zip)</span>
                     </div>
                     <div class="form-group">
-                        <input type="file" id="fileInput" class="form-control">
+                        <input type="file" id="fileInput" class="form-control" accept=".zip,.7z,.rar,.tar,.gz,.bz2,.xz,.so">
                     </div>
-                    <button class="btn btn-success" id="btnUploadFile" onclick="uploadFile()">UPLOAD PATCH FILE</button>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <button class="btn btn-success" id="btnUploadFile" onclick="uploadFile()">UPLOAD PATCH FILE</button>
+                        <button class="btn btn-danger" id="btnCancelUpload" style="display: none;" onclick="cancelUpload()">STOP UPLOAD</button>
+                    </div>
+
+                    <!-- App-like Live Upload Progress Display -->
+                    <div id="uploadProgressContainer" class="upload-progress-container">
+                        <div class="progress-header">
+                            <span class="progress-status" id="uploadStatusText">⚡ Uploading file...</span>
+                            <span class="progress-percent" id="uploadPercentText">0%</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill" id="uploadProgressFill"></div>
+                        </div>
+                        <div class="progress-footer">
+                            <span id="uploadMBText">0.00 MB / 0.00 MB</span>
+                            <span id="uploadSpeedText">0.0 MB/s</span>
+                        </div>
+                    </div>
 
                     <div class="table-responsive" style="margin-top: 20px;">
                         <table>
@@ -1382,26 +1452,132 @@ async def admin_dashboard():
             }
             function closeKeyCreatedModal() { document.getElementById("keyCreatedModal").style.display = "none"; }
 
+            let currentUploadXhr = null;
+            let uploadStartTime = 0;
+
             function uploadFile() {
                 const fileInput = document.getElementById("fileInput");
                 if (!fileInput.files[0]) return alert("Select a file first!");
 
+                const file = fileInput.files[0];
                 const formData = new FormData();
-                formData.append("file", fileInput.files[0]);
+                formData.append("file", file);
 
-                fetch("/api/admin/upload", {
+                const container = document.getElementById("uploadProgressContainer");
+                const statusText = document.getElementById("uploadStatusText");
+                const percentText = document.getElementById("uploadPercentText");
+                const progressFill = document.getElementById("uploadProgressFill");
+                const mbText = document.getElementById("uploadMBText");
+                const speedText = document.getElementById("uploadSpeedText");
+                const btnUpload = document.getElementById("btnUploadFile");
+                const btnCancel = document.getElementById("btnCancelUpload");
+
+                container.style.display = "block";
+                btnUpload.disabled = true;
+                btnCancel.style.display = "inline-block";
+                statusText.innerText = "⚡ Uploading file: " + file.name;
+                percentText.innerText = "0%";
+                progressFill.style.width = "0%";
+                mbText.innerText = "0.00 MB / " + (file.size / (1024 * 1024)).toFixed(2) + " MB";
+                speedText.innerText = "0.0 MB/s";
+
+                uploadStartTime = Date.now();
+                currentUploadXhr = new XMLHttpRequest();
+
+                currentUploadXhr.upload.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        const loadedMB = (e.loaded / (1024 * 1024)).toFixed(2);
+                        const totalMB = (e.total / (1024 * 1024)).toFixed(2);
+                        
+                        const elapsedSec = (Date.now() - uploadStartTime) / 1000;
+                        const speedMBs = elapsedSec > 0.1 ? (e.loaded / (1024 * 1024) / elapsedSec).toFixed(1) : "0.0";
+
+                        progressFill.style.width = percent + "%";
+                        percentText.innerText = percent + "%";
+                        mbText.innerText = `${loadedMB} MB / ${totalMB} MB`;
+                        speedText.innerText = `${speedMBs} MB/s`;
+
+                        if (percent >= 100) {
+                            statusText.innerText = "⚡ Upload complete! Processing & verifying on server...";
+                            percentText.innerText = "100%";
+                        }
+                    }
+                };
+
+                currentUploadXhr.onload = function() {
+                    btnUpload.disabled = false;
+                    btnCancel.style.display = "none";
+                    currentUploadXhr = null;
+
+                    try {
+                        const data = JSON.parse(this.responseText);
+                        if (this.status === 200 && data.status === "success") {
+                            statusText.innerText = `✅ File Uploaded Successfully! (ID #${data.file_id})`;
+                            progressFill.style.width = "100%";
+                            percentText.innerText = "100%";
+                            fileInput.value = "";
+                            loadFiles();
+                            setTimeout(() => {
+                                container.style.display = "none";
+                            }, 5000);
+                        } else {
+                            statusText.innerText = "❌ Upload Failed: " + (data.detail || data.message || "Unknown error");
+                            alert("Upload error: " + (data.detail || data.message || "Unknown error"));
+                        }
+                    } catch (err) {
+                        statusText.innerText = "❌ Error processing server response";
+                        alert("Error processing upload!");
+                    }
+                };
+
+                currentUploadXhr.onerror = function() {
+                    btnUpload.disabled = false;
+                    btnCancel.style.display = "none";
+                    currentUploadXhr = null;
+                    statusText.innerText = "❌ Network connection error during upload!";
+                    alert("Network error while uploading!");
+                };
+
+                currentUploadXhr.onabort = function() {
+                    btnUpload.disabled = false;
+                    btnCancel.style.display = "none";
+                    currentUploadXhr = null;
+                    statusText.innerText = "🛑 Upload cancelled.";
+                    progressFill.style.width = "0%";
+                    percentText.innerText = "0%";
+                };
+
+                currentUploadXhr.open("POST", "/api/admin/upload", true);
+                currentUploadXhr.setRequestHeader("Authorization", `Bearer ${adminToken}`);
+                currentUploadXhr.send(formData);
+            }
+
+            function cancelUpload() {
+                if (currentUploadXhr) {
+                    currentUploadXhr.abort();
+                    currentUploadXhr = null;
+                }
+            }
+
+            function addExternalFile() {
+                const fname = document.getElementById("extFileName").value.trim() || "lib.zip";
+                const furl = document.getElementById("extFileUrl").value.trim();
+                if (!furl || !furl.startsWith("http")) return alert("Please enter a valid URL starting with https://");
+
+                fetch("/api/admin/add_external_file", {
                     method: "POST",
-                    headers: { "Authorization": `Bearer ${adminToken}` },
-                    body: formData
+                    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${adminToken}` },
+                    body: JSON.stringify({ file_name: fname, download_url: furl })
                 })
                 .then(r => r.json())
                 .then(data => {
                     if (data.status === "success") {
-                        alert("File Uploaded Successfully!");
-                        fileInput.value = "";
+                        alert("CDN / GitHub File Link Added Successfully!");
+                        document.getElementById("extFileUrl").value = "";
                         loadFiles();
                     } else {
-                        alert("Error uploading file!");
+                        alert("Error adding link: " + (data.detail || "Unknown error"));
                     }
                 });
             }
